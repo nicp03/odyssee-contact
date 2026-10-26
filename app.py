@@ -102,9 +102,14 @@ def contact():
                     "erreur": "L'envoi du message a échoué."
                 }), 502
 
-    except HTTPError:
-        # Ne pas exposer la clé API ni les détails internes au visiteur.
-        app.logger.error("Resend a refusé l'envoi du message.")
+    except HTTPError as erreur:
+        # Diagnostic interne : ne jamais journaliser la clé API.
+        details = erreur.read().decode("utf-8", errors="replace")
+        app.logger.error(
+            "Refus Resend — code HTTP %s — réponse : %s",
+            erreur.code,
+            details[:2000],
+        )
         return jsonify({
             "erreur": "L'envoi du message a échoué."
         }), 502
