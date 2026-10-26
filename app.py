@@ -91,6 +91,7 @@ def contact():
         headers={
             "Authorization": f"Bearer {cle_api}",
             "Content-Type": "application/json",
+            "User-Agent": "ODYSSEE-Contact/1.0",
         },
         method="POST",
     )
