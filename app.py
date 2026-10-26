@@ -1,10 +1,29 @@
-
+import json
 import os
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
 from flask import Flask, jsonify, request
 
 app = Flask(__name__)
-
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024  # 16 Ko maximum
+
+DESTINATAIRE = "contact.odyssee.projet@gmail.com"
+ORIGINE_AUTORISEE = "https://nicp03.github.io"
+
+
+@app.after_request
+def ajouter_entetes(response):
+    origine = request.headers.get("Origin")
+
+    if origine == ORIGINE_AUTORISEE:
+        response.headers["Access-Control-Allow-Origin"] = origine
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+
+    return response
+
 
 @app.get("/")
 def accueil():
@@ -13,8 +32,12 @@ def accueil():
         "statut": "actif"
     })
 
-@app.post("/contact")
+
+@app.route("/contact", methods=["POST", "OPTIONS"])
 def contact():
+    if request.method == "OPTIONS":
+        return "", 204
+
     donnees = request.get_json(silent=True)
 
     if not isinstance(donnees, dict):
@@ -32,17 +55,74 @@ def contact():
     if not nom or len(nom) > 100:
         return jsonify({"erreur": "Nom invalide."}), 400
 
-    if not email or len(email) > 254 or "@" not in email:
+    if (
+        not email
+        or len(email) > 254
+        or "@" not in email
+        or any(c in email for c in "\r\n")
+    ):
         return jsonify({"erreur": "Adresse e-mail invalide."}), 400
 
     if not message or len(message) > 5000:
         return jsonify({"erreur": "Message invalide."}), 400
 
-    # Aucun e-mail n'est envoyé à ce stade.
+    cle_api = os.environ.get("RESEND_API_KEY")
+    if not cle_api:
+        return jsonify({
+            "erreur": "Le service d'envoi n'est pas configuré."
+        }), 503
+
+    contenu = {
+        "from": "ODYSSÉE <onboarding@resend.dev>",
+        "to": [DESTINATAIRE],
+        "reply_to": email,
+        "subject": f"Nouveau message ODYSSÉE — {nom}",
+        "text": (
+            f"Nouveau message reçu depuis le site ODYSSÉE.\n\n"
+            f"Nom : {nom}\n"
+            f"Adresse e-mail : {email}\n\n"
+            f"Message :\n{message}\n"
+        ),
+    }
+
+    requete = Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(contenu).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {cle_api}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlopen(requete, timeout=15) as reponse:
+            if not 200 <= reponse.status < 300:
+                return jsonify({
+                    "erreur": "L'envoi du message a échoué."
+                }), 502
+
+    except HTTPError:
+        # Ne pas exposer la clé API ni les détails internes au visiteur.
+        app.logger.error("Resend a refusé l'envoi du message.")
+        return jsonify({
+            "erreur": "L'envoi du message a échoué."
+        }), 502
+
+    except (URLError, TimeoutError):
+        app.logger.error("Le service Resend est temporairement inaccessible.")
+        return jsonify({
+            "erreur": "Le service d'envoi est temporairement indisponible."
+        }), 503
+
     return jsonify({
-        "statut": "reçu",
-        "message": "Le formulaire est en préparation."
-    }), 202
+        "statut": "envoyé",
+        "message": "Votre message a été transmis."
+    }), 200
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 10000))
+    )
