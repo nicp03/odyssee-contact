@@ -74,7 +74,6 @@ def contact():
     contenu = {
         "from": "ODYSSÉE <onboarding@resend.dev>",
         "to": [DESTINATAIRE],
-        "reply_to": email,
         "subject": f"Nouveau message ODYSSÉE — {nom}",
         "text": (
             f"Nouveau message reçu depuis le site ODYSSÉE.\n\n"
@@ -83,6 +82,9 @@ def contact():
             f"Message :\n{message}\n"
         ),
     }
+
+    if email:
+        contenu["reply_to"] = email
 
     requete = Request(
         "https://api.resend.com/emails",
