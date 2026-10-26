@@ -55,9 +55,8 @@ def contact():
     if not nom or len(nom) > 100:
         return jsonify({"erreur": "Nom invalide."}), 400
 
-    if (
-        not email
-        or len(email) > 254
+    if email and (
+        len(email) > 254
         or "@" not in email
         or any(c in email for c in "\r\n")
     ):
